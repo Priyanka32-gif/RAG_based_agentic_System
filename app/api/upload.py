@@ -6,9 +6,14 @@ from sentence_transformers import SentenceTransformer
 from app.services.embedder import  embed_chunks
 from starlette.concurrency import run_in_threadpool
 from datetime import datetime, timezone
-from app.services.vector_store import store_embeddings_minimal, create_collection, search_embeddings
+from app.services.vector_store import store_embeddings_minimal, create_cosine_collection, create_dot_collection, search_cosine, search_dot, COSINE_COLLECTION, DOT_COLLECTION
+from app.services.mango_db import save_metadata_to_mongo
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 router = APIRouter()
 
@@ -16,8 +21,9 @@ router = APIRouter()
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 @router.post("/upload")
-async def upload_document(uploaded_file: UploadFile = File(...), chunking_method: str = Form(...)):
+async def upload_document(uploaded_file: UploadFile = File(...), chunking_method: str = Form(...), search_method: str = Form(...)):
 
+    logger.info("File received: %s", uploaded_file.filename)
     upload_time = datetime.now(timezone.utc).isoformat()
 
     if not uploaded_file.filename.endswith((".pdf", ".txt")):
@@ -38,6 +44,7 @@ async def upload_document(uploaded_file: UploadFile = File(...), chunking_method
     else:
         text = ""
 
+    logger.info("Cleaning text...")
     text = clean_text(text)
 
     chunking_method = chunking_method.strip().lower()
@@ -49,13 +56,25 @@ async def upload_document(uploaded_file: UploadFile = File(...), chunking_method
     else:
         raise HTTPException(status_code=400, detail="Invalid chunking method selected.")
 
-
+    logger.info("Running embedding...")
     embeddings = await run_in_threadpool(embed_chunks, chunks, model)
 
-    create_collection()
-    store_embeddings_minimal(chunks, embeddings)
+    search_method = search_method.strip().lower()
 
-    return {
+    # Decide collection based on search method
+    if search_method == 'cosine':
+        create_cosine_collection()
+        collection_name = COSINE_COLLECTION
+    elif search_method == 'dot':
+        create_dot_collection()
+        collection_name = DOT_COLLECTION
+    else:
+        raise ValueError("Invalid search method. Choose 'cosine' or 'dot'.")
+
+    logger.info("Storing embeddings...")
+    store_embeddings_minimal(chunks, embeddings, collection_name)
+
+    metadata =  {
         "file_name": uploaded_file.filename,
         "chunking_method": chunking_method,
         "total_chunks": len(chunks),
@@ -64,3 +83,7 @@ async def upload_document(uploaded_file: UploadFile = File(...), chunking_method
         "sample_embedding": embeddings[0].tolist() if len(embeddings) > 0 else [],
         "upload_time": upload_time
     }
+    logger.info("Saving metadata to MongoDB...")
+    await save_metadata_to_mongo(metadata)
+
+

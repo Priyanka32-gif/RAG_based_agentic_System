@@ -9,28 +9,34 @@ from qdrant_client.http import models as rest
 EMBEDDING_DIM = 384
 
 # name of the collection
-DEFAULT_COLLECTION = "document_chunks"
+COSINE_COLLECTION = "document_chunks_cosine"
+DOT_COLLECTION = "document_chunks_dot"
 
 # using qdart locally
 client = QdrantClient("localhost", port=6333)
 
-def create_collection(collection_name=DEFAULT_COLLECTION):
-    """
-    Create a new Qdrant collection for embeddings
-    using cosine similarity.
-    """
-
+def create_cosine_collection():
     client.recreate_collection(
-        collection_name=collection_name,
+        collection_name=COSINE_COLLECTION,
         vectors_config=rest.VectorParams(
             size=EMBEDDING_DIM,
             distance=rest.Distance.COSINE
-            )
         )
-    print(f"Collection `{collection_name}` created (or recreated).")
+    )
+    print(f"Collection `{COSINE_COLLECTION}` created with COSINE similarity.")
+
+def create_dot_collection():
+    client.recreate_collection(
+        collection_name=DOT_COLLECTION,
+        vectors_config=rest.VectorParams(
+            size=EMBEDDING_DIM,
+            distance=rest.Distance.DOT
+        )
+    )
+    print(f"Collection `{DOT_COLLECTION}` created with DOT similarity.")
 
 # function to store embeddings
-def store_embeddings_minimal(texts, embeddings, collection_name=DEFAULT_COLLECTION):
+def store_embeddings_minimal(texts, embeddings, collection_name):
     """
     Store embeddings and chunk texts into Qdrant.
     """
@@ -46,16 +52,20 @@ def store_embeddings_minimal(texts, embeddings, collection_name=DEFAULT_COLLECTI
     client.upsert(collection_name=collection_name, points=points)
     print(f"Stored {len(points)} vectors with texts in `{collection_name}`.")
 
-# function to retrive anser to query
-def search_embeddings(query_vector, top_k=5, collection_name=DEFAULT_COLLECTION):
-    """
-    Search Qdrant for top_k similar vectors
-    using cosine similarity.
-    """
-    search_result = client.search(
-        collection_name=collection_name,
+# different search function for consine and dot
+def search_cosine(query_vector, top_k=5):
+    return client.search(
+        collection_name=COSINE_COLLECTION,
         query_vector=query_vector.tolist(),
         limit=top_k,
-        with_payload=False
+        with_payload=True
     )
-    return search_result
+
+def search_dot(query_vector, top_k=5):
+    return client.search(
+        collection_name=DOT_COLLECTION,
+        query_vector=query_vector.tolist(),
+        limit=top_k,
+        with_payload=True
+    )
+
