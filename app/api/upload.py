@@ -1,28 +1,40 @@
 from fastapi import APIRouter, UploadFile, HTTPException, File, Form
 import PyPDF2
 import io
-from app.services.chunker import chunk_data_recursive, chunk_data_semantic, clean_text
-from sentence_transformers import SentenceTransformer
-from app.services.embedder import  embed_chunks
-from starlette.concurrency import run_in_threadpool
+import os
 from datetime import datetime, timezone
-from app.services.vector_store import store_embeddings_minimal, create_cosine_collection, create_dot_collection, search_cosine, search_dot, COSINE_COLLECTION, DOT_COLLECTION
-from app.services.mango_db import save_metadata_to_mongo
-
-
 import logging
+from starlette.concurrency import run_in_threadpool
+
+from app.services.chunker import chunk_data_recursive, clean_text
+from app.services.embedder import embed_chunks_openai
+from app.services.vector_store import (
+    store_embeddings_minimal,
+    create_cosine_collection,
+    create_dot_collection,
+    COSINE_COLLECTION,
+    DOT_COLLECTION
+)
+from app.services.mango_db import save_metadata_to_mongo
+from langchain_openai import OpenAIEmbeddings
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 router = APIRouter()
 
-# load model
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# Initialize OpenAI embeddings once
+embedding_model = OpenAIEmbeddings(
+    model="text-embedding-ada-002",
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 @router.post("/upload")
-async def upload_document(uploaded_file: UploadFile = File(...), chunking_method: str = Form(...), search_method: str = Form(...)):
-
+async def upload_document(
+    uploaded_file: UploadFile = File(...),
+    search_method: str = Form(...),
+    email_id: str = Form(...)
+):
     logger.info("File received: %s", uploaded_file.filename)
     upload_time = datetime.now(timezone.utc).isoformat()
 
@@ -47,21 +59,17 @@ async def upload_document(uploaded_file: UploadFile = File(...), chunking_method
     logger.info("Cleaning text...")
     text = clean_text(text)
 
-    chunking_method = chunking_method.strip().lower()
+    chunks = chunk_data_recursive(text)
 
-    if chunking_method == 'recursive':
-        chunks = chunk_data_recursive(text)
-    elif chunking_method == 'semantic':
-        chunks = await run_in_threadpool(chunk_data_semantic, text, model)
-    else:
-        raise HTTPException(status_code=400, detail="Invalid chunking method selected.")
-
-    logger.info("Running embedding...")
-    embeddings = await run_in_threadpool(embed_chunks, chunks, model)
+    logger.info("Running OpenAI embeddings...")
+    embeddings = await run_in_threadpool(
+        embed_chunks_openai,
+        chunks,
+        embedding_model
+    )
 
     search_method = search_method.strip().lower()
 
-    # Decide collection based on search method
     if search_method == 'cosine':
         create_cosine_collection()
         collection_name = COSINE_COLLECTION
@@ -71,19 +79,19 @@ async def upload_document(uploaded_file: UploadFile = File(...), chunking_method
     else:
         raise ValueError("Invalid search method. Choose 'cosine' or 'dot'.")
 
-    logger.info("Storing embeddings...")
+    logger.info("Storing embeddings into vector DB...")
     store_embeddings_minimal(chunks, embeddings, collection_name)
 
-    metadata =  {
+    metadata = {
+        "session_id": email_id.strip().lower(),
         "file_name": uploaded_file.filename,
-        "chunking_method": chunking_method,
         "total_chunks": len(chunks),
         "embedding_shape": embeddings.shape,
-        "embedding_model":"all-MiniLM-L6-v2",
+        "embedding_model": "text-embedding-3-small",
         "sample_embedding": embeddings[0].tolist() if len(embeddings) > 0 else [],
         "upload_time": upload_time
     }
     logger.info("Saving metadata to MongoDB...")
-    await save_metadata_to_mongo(metadata)
+    saved_metadata = await save_metadata_to_mongo(metadata)
 
-
+    return saved_metadata

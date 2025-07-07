@@ -16,7 +16,7 @@ class InterviewBooking(BaseModel):
 
 class QueryRequest(BaseModel):
     question: str                         # The user's input question
-    session_id: Optional[str] = None      # Session ID to track memory context (if used)
+    session_id: str
 
 class EmbeddingResponse(BaseModel):
     embeddings: List[List[float]]  # list of embedding vectors

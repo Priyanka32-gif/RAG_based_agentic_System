@@ -5,12 +5,12 @@ import uuid
 from qdrant_client.http import models as rest
 
 
-# embedding dimention of "all-MiniLM-L6-v2" model is 384
-EMBEDDING_DIM = 384
-
 # name of the collection
 COSINE_COLLECTION = "document_chunks_cosine"
 DOT_COLLECTION = "document_chunks_dot"
+
+# Dimension for OpenAI embedding model text-embedding-3-small
+EMBEDDING_DIM = 1536
 
 # using qdart locally
 client = QdrantClient("localhost", port=6333)
