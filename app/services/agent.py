@@ -110,3 +110,5 @@ def get_agent(session_id: str):
     except Exception as e:
         logger.error("Failed to initialize LangChain agent: %s", str(e), exc_info=True)
         raise RuntimeError(f"Agent init error: {str(e)}")
+
+

@@ -11,8 +11,6 @@ import os
 
 smtp_password = os.getenv("SMTP_PASSWORD")
 
-print(smtp_password)
-
 
 router = APIRouter()
 

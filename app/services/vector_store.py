@@ -56,7 +56,7 @@ def store_embeddings_minimal(texts, embeddings, collection_name):
 def search_cosine(query_vector, top_k=5):
     return client.search(
         collection_name=COSINE_COLLECTION,
-        query_vector=query_vector.tolist(),
+        query_vector=query_vector.tolist() if hasattr(query_vector, "tolist") else query_vector,
         limit=top_k,
         with_payload=True
     )
@@ -64,8 +64,9 @@ def search_cosine(query_vector, top_k=5):
 def search_dot(query_vector, top_k=5):
     return client.search(
         collection_name=DOT_COLLECTION,
-        query_vector=query_vector.tolist(),
+        query_vector=query_vector.tolist() if hasattr(query_vector, "tolist") else query_vector,
         limit=top_k,
         with_payload=True
     )
+
 
